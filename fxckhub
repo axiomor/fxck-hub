@@ -13,6 +13,276 @@ if game.PlaceId == 79189799490564 and key == Access then
     local Players = game:GetService("Players")
     local player = Players.LocalPlayer
     local UserInputService = game:GetService("UserInputService")
+    local RunService = game:GetService("RunService")
+    local TweenService = game:GetService("TweenService")
+    local CoreGui = game:GetService("CoreGui")
+
+    local DEFAULT_WAIT = 0.15
+    local FAST_WAIT = 0.05
+    local SLOW_WAIT = 1
+
+    local scriptAlive = true
+
+    local ResourceManager = {
+        connections = {},
+        threads = {},
+        guis = {}
+    }
+
+    local function safeWait(duration)
+        return task.wait(duration or DEFAULT_WAIT)
+    end
+
+    local function findMainContainer(gui)
+        if not gui then return nil end
+        if gui:FindFirstChild("Main") then
+            return gui.Main
+        end
+        for _, descendant in ipairs(gui:GetDescendants()) do
+            if descendant:IsA("Frame") and descendant.Name == "Main" then
+                return descendant
+            end
+        end
+        return gui
+    end
+
+    local function tryGetGui(window)
+        if typeof(window) ~= "table" or typeof(window.GetGui) ~= "function" then
+            return nil
+        end
+        local ok, gui = pcall(function()
+            return window:GetGui()
+        end)
+        if ok and typeof(gui) == "Instance" then
+            return gui
+        end
+        return nil
+    end
+
+    function ResourceManager:trackConnection(connection)
+        if connection then
+            table.insert(self.connections, connection)
+        end
+        return connection
+    end
+
+    function ResourceManager:trackThread(thread)
+        if thread then
+            table.insert(self.threads, thread)
+        end
+        return thread
+    end
+
+    function ResourceManager:trackGui(gui)
+        if gui then
+            table.insert(self.guis, gui)
+        end
+        return gui
+    end
+
+    function ResourceManager:setNamecallRestorer(callback)
+        self.restoreNamecall = callback
+    end
+
+    local function destroyGui(guiObject)
+        if guiObject and guiObject.Destroy then
+            guiObject:Destroy()
+        end
+    end
+
+    function ResourceManager:cleanup()
+        if not scriptAlive then return end
+        scriptAlive = false
+
+        for _, connection in ipairs(self.connections) do
+            pcall(function()
+                connection:Disconnect()
+            end)
+        end
+        table.clear(self.connections)
+
+        for _, thread in ipairs(self.threads) do
+            pcall(function()
+                task.cancel(thread)
+            end)
+        end
+        table.clear(self.threads)
+
+        if self.restoreNamecall then
+            pcall(self.restoreNamecall)
+            self.restoreNamecall = nil
+        end
+
+        for _, gui in ipairs(self.guis) do
+            destroyGui(gui)
+        end
+        table.clear(self.guis)
+
+        if self.loadingOverlay then
+            self.loadingOverlay:Destroy(true)
+            self.loadingOverlay = nil
+        end
+    end
+
+    local function fromHex(hex)
+        hex = hex:gsub("#","")
+        return Color3.fromRGB(
+            tonumber(hex:sub(1,2), 16),
+            tonumber(hex:sub(3,4), 16),
+            tonumber(hex:sub(5,6), 16)
+        )
+    end
+
+    local function createLoadingOverlay()
+        local overlay = {}
+        local amethyst = fromHex("8F57FF")
+        local amethystDark = fromHex("351944")
+
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "FuckHubLoadingOverlay"
+        screenGui.IgnoreGuiInset = true
+        screenGui.ResetOnSpawn = false
+        screenGui.DisplayOrder = 999999
+        screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        screenGui.Parent = CoreGui
+        ResourceManager:trackGui(screenGui)
+
+        local background = Instance.new("Frame")
+        background.BackgroundColor3 = amethystDark
+        background.BackgroundTransparency = 0.15
+        background.Size = UDim2.fromScale(1, 1)
+        background.Parent = screenGui
+
+        local gradient = Instance.new("UIGradient")
+        gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, amethystDark),
+            ColorSequenceKeypoint.new(1, amethyst)
+        })
+        gradient.Rotation = 45
+        gradient.Parent = background
+
+        local container = Instance.new("Frame")
+        container.AnchorPoint = Vector2.new(0.5, 0.5)
+        container.Position = UDim2.fromScale(0.5, 0.5)
+        container.Size = UDim2.fromOffset(360, 210)
+        container.BackgroundColor3 = fromHex("1E0C29")
+        container.BackgroundTransparency = 0.1
+        container.Parent = background
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 16)
+        corner.Parent = container
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Thickness = 2
+        stroke.Color = amethyst
+        stroke.Transparency = 0.2
+        stroke.Parent = container
+
+        local title = Instance.new("TextLabel")
+        title.BackgroundTransparency = 1
+        title.Font = Enum.Font.GothamBold
+        title.Text = "FuckHub está iniciando..."
+        title.TextColor3 = Color3.fromRGB(238, 231, 255)
+        title.TextSize = 20
+        title.AnchorPoint = Vector2.new(0.5, 0.5)
+        title.Position = UDim2.fromScale(0.5, 0.65)
+        title.Parent = container
+
+        local subtitle = Instance.new("TextLabel")
+        subtitle.BackgroundTransparency = 1
+        subtitle.Font = Enum.Font.Gotham
+        subtitle.Text = "Carregando Fluent e módulos necessários"
+        subtitle.TextColor3 = Color3.fromRGB(192, 185, 215)
+        subtitle.TextSize = 14
+        subtitle.AnchorPoint = Vector2.new(0.5, 0.5)
+        subtitle.Position = UDim2.fromScale(0.5, 0.82)
+        subtitle.Parent = container
+
+        local spinner = Instance.new("ImageLabel")
+        spinner.BackgroundTransparency = 1
+        spinner.AnchorPoint = Vector2.new(0.5, 0.5)
+        spinner.Size = UDim2.fromOffset(48, 48)
+        spinner.Position = UDim2.fromScale(0.5, 0.3)
+        spinner.Image = "rbxassetid://4483345998"
+        spinner.ImageColor3 = amethyst
+        spinner.Parent = container
+
+        overlay.Gui = screenGui
+        overlay.Container = container
+        overlay.Background = background
+        overlay.Title = title
+        overlay.Subtitle = subtitle
+        overlay.Spinner = spinner
+        overlay.running = true
+
+        overlay.spinThread = ResourceManager:trackThread(task.spawn(function()
+            while overlay.running and scriptAlive and spinner.Parent do
+                spinner.Rotation = (spinner.Rotation + 4) % 360
+                safeWait(0.02)
+            end
+        end))
+
+        function overlay:SetStatus(text)
+            pcall(function()
+                subtitle.Text = text
+            end)
+        end
+
+        function overlay:Complete()
+            if self.completed then return end
+            self.completed = true
+            self.running = false
+            if self.spinThread then
+                pcall(function()
+                    task.cancel(self.spinThread)
+                end)
+            end
+
+            local fadeContainer = TweenService:Create(container, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                BackgroundTransparency = 1
+            })
+            local fadeTitle = TweenService:Create(title, TweenInfo.new(0.35), {TextTransparency = 1})
+            local fadeSubtitle = TweenService:Create(subtitle, TweenInfo.new(0.35), {TextTransparency = 1})
+            local fadeBackground = TweenService:Create(background, TweenInfo.new(0.35), {BackgroundTransparency = 1})
+
+            fadeBackground.Completed:Connect(function()
+                destroyGui(screenGui)
+            end)
+
+            fadeContainer:Play()
+            fadeTitle:Play()
+            fadeSubtitle:Play()
+            fadeBackground:Play()
+        end
+
+        function overlay:Destroy(immediate)
+            self.running = false
+            if immediate then
+                destroyGui(self.Gui)
+                return
+            end
+            self:Complete()
+        end
+
+        return overlay
+    end
+
+    local loadingOverlay = createLoadingOverlay()
+    ResourceManager.loadingOverlay = loadingOverlay
+    if loadingOverlay then
+        loadingOverlay:SetStatus("Sincronizando com Fluent...")
+    end
+
+    ResourceManager:trackConnection(player.OnTeleport:Connect(function()
+        ResourceManager:cleanup()
+    end))
+
+    if RunService:IsServer() then
+        game:BindToClose(function()
+            ResourceManager:cleanup()
+        end)
+    end
 
     -- Debug: Hook RemoteEvent to capture server calls (simple and safe approach)
     task.spawn(function()
@@ -79,6 +349,15 @@ if game.PlaceId == 79189799490564 and key == Access then
             end
             
             if setreadonly then setreadonly(mt, true) end
+
+            ResourceManager:setNamecallRestorer(function()
+                if not mt or not oldNamecall then return end
+                pcall(function()
+                    setreadonly(mt, false)
+                    mt.__namecall = oldNamecall
+                    setreadonly(mt, true)
+                end)
+            end)
             
             print("[DEBUG ATIVADO] Sistema de captura ativado!")
             print("Clique no botão Roll de qualquer gacha para ver os dados enviados.\n")
@@ -163,29 +442,29 @@ if game.PlaceId == 79189799490564 and key == Access then
     end
     setAutoAttack()
 
-    task.spawn(function()
-        while true do
+    ResourceManager:trackThread(task.spawn(function()
+        while scriptAlive do
             attackRangePart =  workspace:FindFirstChild("AttackRange")
             if not attackRangePart  then 
                 setAutoAttack() 
-                task.wait(1)
+                safeWait(1)
                 continue
             end
             attackRangePart = attackRangePart:FindFirstChild("Part")
             if not attackRangePart  then 
                 setAutoAttack() 
-                task.wait(1)
+                safeWait(1)
                 continue
             end
             attackRange = attackRangePart.Size.X/2
-            task.wait(1)
+            safeWait(1)
         end
-    end)
+    end))
 
 
-    task.spawn(function()
-        while true do
-            task.wait()
+    ResourceManager:trackThread(task.spawn(function()
+        while scriptAlive do
+            safeWait(DEFAULT_WAIT)
             if #workspace.Zones:GetChildren() < 1 then continue end
             gachaZone = workspace.Zones:GetChildren()[1]
             
@@ -197,9 +476,9 @@ if game.PlaceId == 79189799490564 and key == Access then
             
             gachaZone = gachaZone:FindFirstChild("Circle")
             if not gachaZone then continue end 
-            task.wait(1)
+            safeWait(1)
         end
-    end)
+    end))
 
     local function loadData()
         local ok = true
@@ -281,27 +560,27 @@ if game.PlaceId == 79189799490564 and key == Access then
     local hrp = FindHRP(player)
     local humanoid = FindHumanoid(player)
 
-    player.CharacterAdded:Connect(function(character)
+    ResourceManager:trackConnection(player.CharacterAdded:Connect(function(character)
         hrp = character:WaitForChild("HumanoidRootPart")
         humanoid = character:WaitForChild("Humanoid")
         print("Character updated!")
-    end)
+    end))
 
-    roomGui:GetPropertyChangedSignal("Text"):Connect(function()
+    ResourceManager:trackConnection(roomGui:GetPropertyChangedSignal("Text"):Connect(function()
         waveDungeon = tonumber((string.gsub(roomGui.Text, "Room: ", ""))) or waveDungeon
-    end)
-    waveGui:GetPropertyChangedSignal("Text"):Connect(function()
+    end))
+    ResourceManager:trackConnection(waveGui:GetPropertyChangedSignal("Text"):Connect(function()
         waveRaid = tonumber((string.gsub(waveGui.Text, "Room: ", "")))
         if not waveRaid then
             waveRaid = tonumber((string.gsub(waveGui.Text, "Wave: ", "")))
         end
-    end)
-    defGui:GetPropertyChangedSignal("Text"):Connect(function()
+    end))
+    ResourceManager:trackConnection(defGui:GetPropertyChangedSignal("Text"):Connect(function()
         waveDef = tonumber((string.gsub(defGui.Text, "Room: ", "")))
         if not waveDef then
             waveDef = tonumber((string.gsub(defGui.Text, "Wave: ", "")))
         end
-    end)
+    end))
 
 
     local function getDistance(obj1, obj2)
@@ -339,7 +618,7 @@ if game.PlaceId == 79189799490564 and key == Access then
         for _, monster in pairs(monsters) do
             
             if monster.Name == "" or not monster.Name then 
-                task.wait()
+                safeWait()
                 continue 
             end
             local nameText = monster.Name
@@ -389,7 +668,7 @@ if game.PlaceId == 79189799490564 and key == Access then
         while keepRunning and stillTarget  and alive do
             if hrp then hrp.CFrame = CFrame.new(targetPosition) end
             if not hrp then 
-                task.wait()
+                safeWait()
                 continue
             end
             if getDistance(hrp, monster) > distance then 
@@ -408,7 +687,7 @@ if game.PlaceId == 79189799490564 and key == Access then
                     break;
                 end
             end
-            task.wait()
+            safeWait()
         end
     end
 
@@ -420,7 +699,7 @@ if game.PlaceId == 79189799490564 and key == Access then
             local Head = monster.Head
             if Head.Transparency ~= 0 then continue end
             if not hrp then 
-                task.wait()
+                safeWait()
                 continue
             end
             local dis = getDistance(hrp, monster)
@@ -428,7 +707,7 @@ if game.PlaceId == 79189799490564 and key == Access then
 
             if not monster then continue end
             if monster.Name == "" or not monster.Name then 
-                task.wait()
+                safeWait()
                 continue
             end
             local nameText = monster.Name
@@ -449,30 +728,30 @@ if game.PlaceId == 79189799490564 and key == Access then
     end
 
     local function autoFarm()
-        while keepRunning do
+        while scriptAlive and keepRunning do
             if not isKilling and not inDungeon then
                 check()
-                task.wait()
+                safeWait()
             end
-            task.wait()
+            safeWait()
         end
     end
 
     --DDungeon
 
-    task.spawn(function()
-        while true do
+    ResourceManager:trackThread(task.spawn(function()
+        while scriptAlive do
             if #workspace.Zones:GetChildren() == 0 then
-                task.wait(6)
+                safeWait(6)
                 continue
             end
             local Map = workspace.Zones:GetChildren()[1].Name
             if (Map == teleportBackMap) then
-                task.wait()
+                safeWait(DEFAULT_WAIT)
                 continue
             end
             if inDungeon then 
-                task.wait()
+                safeWait(DEFAULT_WAIT)
                 continue
             end
             local args = {
@@ -482,9 +761,9 @@ if game.PlaceId == 79189799490564 and key == Access then
                 }
             }
             game:GetService("ReplicatedStorage"):WaitForChild("Reply"):WaitForChild("Reliable"):FireServer(unpack(args))
-            task.wait(6)
+            safeWait(6)
         end
-    end)
+    end))
 
     local function teleportBack() 
         local args = {
@@ -526,14 +805,14 @@ if game.PlaceId == 79189799490564 and key == Access then
         return false
     end
 
-    task.spawn(function()
-        while true do
+    ResourceManager:trackThread(task.spawn(function()
+        while scriptAlive do
             inDungeon = checkFolderDungeonZones()
             if inDungeon == false then inDungeon = checkFolderRaidZones() end
             if inDungeon == false then inDungeon = checkFolderDefZones() end
-            task.wait(5)
+            safeWait(5)
         end 
-    end)
+    end))
 
     task.spawn(function()
         table.insert(dungeonList, "Easy");   dungeonNumber["Easy"] =   1; dungeonTime["Easy"] = 0
@@ -557,9 +836,9 @@ if game.PlaceId == 79189799490564 and key == Access then
         local headPos = getPosition(head)
         local targetPosition = headPos + Vector3.new(5, hrpToFeet + safeHeight, 3)        
         if hrp then hrp.CFrame = CFrame.new(targetPosition) end
-        while isDungeon and inDungeon and head.Transparency == 0 and monster and monster.Parent do
+        while scriptAlive and isDungeon and inDungeon and head.Transparency == 0 and monster and monster.Parent do
             if not hrp then 
-                task.wait()
+                safeWait()
                 continue
             end
             if getDistance(hrp, monster) > distance then 
@@ -568,26 +847,26 @@ if game.PlaceId == 79189799490564 and key == Access then
             if hrp then hrp.CFrame = CFrame.new(targetPosition) end
             local newtargetPosition = getPosition(head) + Vector3.new(5, hrpToFeet + safeHeight, 3)   
             if (newtargetPosition-targetPosition).Magnitude > 10 then targetPosition = newtargetPosition end
-            task.wait()
+            safeWait()
         end
     end
 
     local function checkDungeon() 
-        while waveDungeon <= targetWaveDungeon and inDungeon and isDungeon and waveRaid <= targetWaveRaid and waveDef <= targetWaveDef do 
+        while scriptAlive and waveDungeon <= targetWaveDungeon and inDungeon and isDungeon and waveRaid <= targetWaveRaid and waveDef <= targetWaveDef do 
             local monsters = workspace.Enemies:GetChildren()
             for _, monster in pairs(monsters) do
                 local Head = monster:FindFirstChild("Head")
                 if not Head or Head.Transparency ~= 0 then continue end
                 if not hrp then 
-                    task.wait()
+                    safeWait()
                     continue
                 end
                 local dis = getDistance(hrp, monster)
                 if dis >= distance or dis <= attackRange then continue end
                 killDungeon(monster)
-                task.wait()
+                safeWait()
             end
-        task.wait()
+        safeWait()
         end
         if isDungeon and (waveRaid > targetWaveRaid or waveDef > targetWaveDef) then teleportBack() end
     end
@@ -665,39 +944,39 @@ if game.PlaceId == 79189799490564 and key == Access then
         end
     end
     local function autoFarmDungeon()
-        while (isDungeon) do
+        while scriptAlive and isDungeon do
             waveRaid = 0
             waveDungeon = 0
             waveDef = 0
             joinDungeon()
-            task.wait(1)    
+            safeWait(1)    
         end
     end
     -- SStronger
     local function autoFuse()
-        while isFuse do
+        while scriptAlive and isFuse do
             local args = {
             "Weapon Fuse All"
             }
             game:GetService("ReplicatedStorage"):WaitForChild("Reply"):WaitForChild("Reliable"):FireServer(unpack(args))
-            task.wait(10)
+            safeWait(10)
         end 
     end
 
     local function autoRankUp()
-        while isRankUp do
+        while scriptAlive and isRankUp do
             local args = {
             "RankUp"
         }
         game:GetService("ReplicatedStorage"):WaitForChild("Reply"):WaitForChild("Reliable"):FireServer(unpack(args))
-        task.wait(10)
+        safeWait(10)
         end 
     end
 
     local function autoHatch()
-        while isHatch do
+        while scriptAlive and isHatch do
             if not gachaZone or typeof(gachaZone) ~= "Instance" or typeof(hrp) ~= "Instance" then 
-                task.wait() 
+                safeWait() 
                 continue 
             end
             if getDistance(gachaZone, hrp) <= 8.5 and not HatchGui:FindFirstChild("CloseAutoOpen") then
@@ -707,7 +986,7 @@ if game.PlaceId == 79189799490564 and key == Access then
                     "Gacha Auto"
                 )
             end 
-            task.wait()
+            safeWait()
         end
     end
 
@@ -776,70 +1055,70 @@ if game.PlaceId == 79189799490564 and key == Access then
     -- All gachas use the same format: "Crate Roll Start" with { { "GachaName", false } }
     -- All spam roll continuously when enabled
     local function autoOrganization()
-        while isOrganization do
+        while scriptAlive and isOrganization do
             rollGacha("Organization", false)
             task.wait(0.1) -- Spam rápido
         end
     end
 
     local function autoRace()
-        while isRace do
+        while scriptAlive and isRace do
             rollGacha("Race", false)
             task.wait(0.1) -- Spam rápido
         end
     end
 
     local function autoMagicEyes()
-        while isMagicEyes do
+        while scriptAlive and isMagicEyes do
             rollGacha("MagicEyes", false)
             task.wait(0.1) -- Spam rápido
         end
     end
 
     local function autoBiju()
-        while isBiju do
+        while scriptAlive and isBiju do
             rollGacha("Biju", false)
             task.wait(0.1) -- Spam rápido
         end
     end
 
     local function autoSayajin()
-        while isSayajin do
+        while scriptAlive and isSayajin do
             rollGacha("Sayajin", false)
             task.wait(0.1) -- Spam rápido
         end
     end
 
     local function autoFruit()
-        while isFruit do
+        while scriptAlive and isFruit do
             rollGacha("Fruits", false)
             task.wait(0.1) -- Spam rápido
         end
     end
 
     local function autoHaki()
-        while isHaki do
+        while scriptAlive and isHaki do
             rollGacha("Haki", false)
             task.wait(0.1) -- Spam rápido
         end
     end
 
     local function autoBreath()
-        while isBreath do
+        while scriptAlive and isBreath do
             rollGacha("Breathing", false)
             task.wait(0.1) -- Spam rápido
         end
     end
 
     local function autoTitan()
-        while isTitan do
+        while scriptAlive and isTitan do
             rollGacha("Titan", false)
             task.wait(0.1) -- Spam rápido
         end
     end
 
     local function autoDemonArt()
-        while isDemonArt do
+        while scriptAlive and isDemonArt do
             local args = {
                 [1] = "Crate Roll Start",
                 [2] = {
@@ -854,7 +1133,7 @@ if game.PlaceId == 79189799490564 and key == Access then
 
     -- Auto Upgrade Functions
     local function autoUpgradeEyes()
-        while isUpgradeEyes do
+        while scriptAlive and isUpgradeEyes do
             local ReplicatedStorage = game:GetService("ReplicatedStorage")
             local Reply = ReplicatedStorage:WaitForChild("Reply")
             local Reliable = Reply:WaitForChild("Reliable")
@@ -873,7 +1152,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     end
     
     local function autoUpgradeWise()
-        while isUpgradeWise do
+        while scriptAlive and isUpgradeWise do
             local ReplicatedStorage = game:GetService("ReplicatedStorage")
             local Reply = ReplicatedStorage:WaitForChild("Reply")
             local Reliable = Reply:WaitForChild("Reliable")
@@ -892,7 +1171,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     end
     
     local function autoUpgradePirate()
-        while isUpgradePirate do
+        while scriptAlive and isUpgradePirate do
             local ReplicatedStorage = game:GetService("ReplicatedStorage")
             local Reply = ReplicatedStorage:WaitForChild("Reply")
             local Reliable = Reply:WaitForChild("Reliable")
@@ -911,7 +1190,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     end
     
     local function autoUpgradeRengoku()
-        while isUpgradeRengoku do
+        while scriptAlive and isUpgradeRengoku do
             local ReplicatedStorage = game:GetService("ReplicatedStorage")
             local Reply = ReplicatedStorage:WaitForChild("Reply")
             local Reliable = Reply:WaitForChild("Reliable")
@@ -930,7 +1209,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     end
     
     local function autoUpgradeLevi()
-        while isUpgradeLevi do
+        while scriptAlive and isUpgradeLevi do
             local ReplicatedStorage = game:GetService("ReplicatedStorage")
             local Reply = ReplicatedStorage:WaitForChild("Reply")
             local Reliable = Reply:WaitForChild("Reliable")
@@ -949,7 +1228,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     end
 
     local function autoUpgradeDemonArt()
-        while isUpgradeDemonArt do
+        while scriptAlive and isUpgradeDemonArt do
             local ReplicatedStorage = game:GetService("ReplicatedStorage")
             local Reply = ReplicatedStorage:WaitForChild("Reply")
             local Reliable = Reply:WaitForChild("Reliable")
@@ -981,27 +1260,27 @@ if game.PlaceId == 79189799490564 and key == Access then
                 break
             end
         end
-        task.wait(repeatTime)
+        safeWait(repeatTime)
     end
     local function autoTeleportFarm()
-        while isTeleportFarm do
+        while scriptAlive and isTeleportFarm do
             if inDungeon then 
-                task.wait()
+                safeWait()
                 continue 
             end
             for _, location in ipairs(locationTargetList) do
                 teleportTo(location)
             end
-            if inDungeon == false and isTeleportHatch and gachaZone and typeof(gachaZone) == "Instance" and typeof(hrp) == "Instance"  then
+            if not inDungeon and isTeleportHatch and gachaZone and typeof(gachaZone) == "Instance" and typeof(hrp) == "Instance"  then
                 local hrpToFeet = (hrp.Size.Y / 2) + (humanoid.HipHeight or 2)
                 local safeHeight = 0
                 local headPos = getPosition(gachaZone)
                 local targetPosition = headPos + Vector3.new(3, hrpToFeet + safeHeight, 3)      
                 hrp.CFrame = CFrame.new(targetPosition)
-                task.wait(0.5)
+                safeWait(0.5)
             end
 
-            task.wait()
+            safeWait()
         end
     end
     local function addLocation()
@@ -1014,19 +1293,25 @@ if game.PlaceId == 79189799490564 and key == Access then
     -- GGUI
     
     local Window = Fluent:CreateWindow({
-        Title = "Fuck Hub | Anime Weapons | Version: 2.3 | Beta",
+        Title = "Fuck Hub | Anime Weapons | Version: 4.1 | Anti Crash",
         TabWidth = 160,
         Size = UDim2.fromOffset(580, 460),
         Acrylic = true, -- Transparent blur background
         Theme = "Amethyst",
         MinimizeKey = Enum.KeyCode.LeftControl -- Used when theres no MinimizeKeybind
     })
+    local hubGui = tryGetGui(Window)
+    local hubMainContainer = findMainContainer(hubGui)
+    local hubMainOriginalTransparency = hubMainContainer and hubMainContainer.BackgroundTransparency or 0
+    if hubGui then
+        hubGui.Enabled = false
+    end
     
     -- Add Gengar image next to the title
-    task.spawn(function()
-        task.wait(1) -- Wait for window to fully render
+    ResourceManager:trackThread(task.spawn(function()
+        safeWait(1) -- Wait for window to fully render
         pcall(function()
-            local windowGui = Window:GetGui()
+            local windowGui = tryGetGui(Window)
             if windowGui then
                 -- Find the title label
                 local titleLabel = nil
@@ -1055,25 +1340,25 @@ if game.PlaceId == 79189799490564 and key == Access then
                         end
                     end
                     
-                    titleLabel:GetPropertyChangedSignal("AbsolutePosition"):Connect(updatePosition)
-                    titleLabel:GetPropertyChangedSignal("AbsoluteSize"):Connect(updatePosition)
+                    ResourceManager:trackConnection(titleLabel:GetPropertyChangedSignal("AbsolutePosition"):Connect(updatePosition))
+                    ResourceManager:trackConnection(titleLabel:GetPropertyChangedSignal("AbsoluteSize"):Connect(updatePosition))
                     
                     -- Also update on window resize
                     if windowGui:FindFirstChild("Main") then
-                        windowGui.Main:GetPropertyChangedSignal("AbsoluteSize"):Connect(updatePosition)
+                        ResourceManager:trackConnection(windowGui.Main:GetPropertyChangedSignal("AbsoluteSize"):Connect(updatePosition))
                     end
                 end
             end
         end)
-    end)
+    end))
 
-    TextChatService.MessageReceived:Connect(function(message)
+    ResourceManager:trackConnection(TextChatService.MessageReceived:Connect(function(message)
         if not message or not message.TextSource then return end
         if not (message.TextSource.Name == player.Name) then return end
         if #message.Text == 1 then 
             Window:Minimize()
         end
-    end)
+    end))
         
     local tabs = {
         Main = Window:AddTab({ Title = "Farm", Icon = "swords" }),
@@ -1485,6 +1770,19 @@ if game.PlaceId == 79189799490564 and key == Access then
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/khuyenbd8bb/RobloxKaitun/refs/heads/main/FPS%20Booster.lua"))()
             end
         end)
+
+        tabs.Settings:AddButton({
+            Title = "Unload FuckHub",
+            Description = "Desliga loops, conexões e hooks para liberar recursos",
+            Callback = function()
+                ResourceManager:cleanup()
+                Fluent:Notify({
+                    Title = "FuckHub",
+                    Content = "Recursos limpos. Reexecute o script para usar novamente.",
+                    Duration = 5
+                })
+            end
+        })
         
         -- Hidden Nick
         local hiddenNickInput = tabs.Settings:AddInput("hiddenNickInput", {
@@ -1534,10 +1832,10 @@ if game.PlaceId == 79189799490564 and key == Access then
             end)
         end
         
-        -- Continuously modify all name displays
-        task.spawn(function()
-            while true do
-                task.wait(0.1)
+        
+        ResourceManager:trackThread(task.spawn(function()
+            while scriptAlive do
+                safeWait(0.1)
                 pcall(function()
                     if hiddenNickValue and hiddenNickValue ~= "" then
                         -- Apply hidden nick
@@ -1639,7 +1937,7 @@ if game.PlaceId == 79189799490564 and key == Access then
                     end
                 end)
             end
-        end)
+        end))
         
         hiddenNickInput:OnChanged(function(value)
             applyHiddenNick(value)
@@ -1760,11 +2058,11 @@ if game.PlaceId == 79189799490564 and key == Access then
                 end
                 
                 -- Apply to future characters
-                noobSkinConnection = player.CharacterAdded:Connect(function(character)
-                    task.wait(1) -- Wait for character to fully load
+                noobSkinConnection = ResourceManager:trackConnection(player.CharacterAdded:Connect(function(character)
+                    safeWait(1) -- Wait for character to fully load
                     saveOriginalAppearance(character)
                     applyNoobSkin(character)
-                end)
+                end))
             else
                 -- Restore original appearance when disabled
                 if player.Character then
@@ -1772,10 +2070,10 @@ if game.PlaceId == 79189799490564 and key == Access then
                 end
                 
                 -- Restore on future characters
-                noobSkinConnection = player.CharacterAdded:Connect(function(character)
-                    task.wait(1)
+                noobSkinConnection = ResourceManager:trackConnection(player.CharacterAdded:Connect(function(character)
+                    safeWait(1)
                     restoreOriginalAppearance(character)
-                end)
+                end))
             end
         end)
 
@@ -1795,6 +2093,7 @@ if game.PlaceId == 79189799490564 and key == Access then
         local ScreenGui = Instance.new("ScreenGui")
         ScreenGui.Name = "FuckHubGUI"
         Parent(ScreenGui)
+        ResourceManager:trackGui(ScreenGui)
 
        -- Floating button with asset ID: 127945978911642
 local floatingButton = Instance.new("ImageButton")
@@ -1813,7 +2112,7 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(1, 0)
 corner.Parent = floatingButton
 
-floatingButton.Activated:Connect(function()
+ResourceManager:trackConnection(floatingButton.Activated:Connect(function()
 	local start = TS:Create(
 		floatingButton,
 		TweenInfo.new(0.2, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out),
@@ -1828,18 +2127,18 @@ floatingButton.Activated:Connect(function()
 
 	)
 	start:Play()
-	task.spawn(function()
+	ResourceManager:trackThread(task.spawn(function()
 		local sound = Instance.new("Sound")
 		sound.SoundId = "rbxassetid://87437544236708"
 		sound.Parent = floatingButton
 		sound:Play()
 		sound.Ended:Wait()
 		sound:Destroy()
-	end)
+	end))
 	start.Completed:Wait()
 	final:Play()
 	
-end)
+end))
         
         -- Make it draggable and clickable
         local dragging = false
@@ -1848,15 +2147,15 @@ end)
         local clickTime = 0
         local isClick = true
         
-        floatingButton.MouseButton1Down:Connect(function()
+        ResourceManager:trackConnection(floatingButton.MouseButton1Down:Connect(function()
             clickTime = tick()
             isClick = true
             dragStart = UserInputService:GetMouseLocation()
             startPos = floatingButton.Position
-        end)
+        end))
         
         local dragConnection
-        dragConnection = UserInputService.InputChanged:Connect(function(input)
+        dragConnection = ResourceManager:trackConnection(UserInputService.InputChanged:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseMovement and dragStart then
                 local currentPos = UserInputService:GetMouseLocation()
                 local delta = currentPos - dragStart
@@ -1868,16 +2167,16 @@ end)
                     floatingButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
                 end
             end
-        end)
+        end))
         
-        floatingButton.MouseButton1Up:Connect(function()
+        ResourceManager:trackConnection(floatingButton.MouseButton1Up:Connect(function()
             if isClick and not dragging and (tick() - clickTime) < 0.3 then
                 Window:Minimize()
             end
             dragging = false
             dragStart = nil
             startPos = nil
-        end)
+        end))
         
         
         
@@ -1909,8 +2208,24 @@ end)
         SaveManager:LoadAutoloadConfig()
         tabs.Settings:AddSection("Only work with lastest config")
 
+        if loadingOverlay then
+            loadingOverlay:SetStatus("Interface pronta. Abrindo FuckHub...")
+            loadingOverlay:Complete()
+            ResourceManager.loadingOverlay = nil
+            safeWait(0.4)
+        end
+
+        if hubGui then
+            hubGui.Enabled = true
+        end
+        if hubMainContainer then
+            hubMainContainer.BackgroundTransparency = 1
+            TweenService:Create(
+                hubMainContainer,
+                TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                {BackgroundTransparency = hubMainOriginalTransparency}
+            ):Play()
+        end
+
     end
 end
-
-
---part.CanCollide = false -- Players can walk through
