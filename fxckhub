@@ -397,6 +397,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     local dungeonNumber = {}; local raidNumber = {};  local defNumber = {}
     local dungeonTime  =  {}; local raidTime  =  {};  local defTime = {}
     local teleportBackMap = "None"
+    local dontTeleport = false
 
     local repeatTime = 1
     local locationList = {}; local locationNumber = {}; 
@@ -427,8 +428,53 @@ if game.PlaceId == 79189799490564 and key == Access then
     local isUpgradeRengoku = false
     local isUpgradeLevi = false
     local isUpgradeDemonArt = false
+    local isAutoAttackArea = false
+    local yenUpgradeFlags = {}
+    local tokenUpgradeFlags = {}
+    local upgradeThreads = {Yen = {}, Token = {}}
+    local attackAreaThread = nil
     local currentTime = os.date("*t") -- Use os.date() not os.time()
     -- Main
+
+    local function fireReliable(args)
+        game:GetService("ReplicatedStorage"):WaitForChild("Reply"):WaitForChild("Reliable"):FireServer(unpack(args))
+    end
+
+    local function sendStatUpgrade(remoteName, stat)
+        fireReliable({
+            [1] = remoteName,
+            [2] = {
+                [1] = stat
+            }
+        })
+    end
+
+    local function ensureUpgradeLoop(category, stat, remoteName, interval)
+        interval = interval or 0.3
+        if upgradeThreads[category][stat] then return end
+        upgradeThreads[category][stat] = ResourceManager:trackThread(task.spawn(function()
+            while scriptAlive do
+                local flags = (category == "Yen") and yenUpgradeFlags or tokenUpgradeFlags
+                if not flags[stat] then break end
+                sendStatUpgrade(remoteName, stat)
+                safeWait(interval)
+            end
+            upgradeThreads[category][stat] = nil
+        end))
+    end
+
+    local function ensureAttackAreaLoop()
+        if attackAreaThread then return end
+        attackAreaThread = ResourceManager:trackThread(task.spawn(function()
+            while scriptAlive and isAutoAttackArea do
+                fireReliable({
+                    [1] = "Evolve AttackArea"
+                })
+                safeWait(0.4)
+            end
+            attackAreaThread = nil
+        end))
+    end
 
     local function setAutoAttack()
         local args = {
@@ -438,7 +484,7 @@ if game.PlaceId == 79189799490564 and key == Access then
                 true
             }
         }
-        game:GetService("ReplicatedStorage"):WaitForChild("Reply"):WaitForChild("Reliable"):FireServer(unpack(args))
+        fireReliable(args)
     end
     setAutoAttack()
 
@@ -741,7 +787,7 @@ if game.PlaceId == 79189799490564 and key == Access then
 
     ResourceManager:trackThread(task.spawn(function()
         while scriptAlive do
-            if #workspace.Zones:GetChildren() == 0 then
+            if #workspace.Zones:GetChildren() == 0 or dontTeleport then
                 safeWait(6)
                 continue
             end
@@ -852,8 +898,13 @@ if game.PlaceId == 79189799490564 and key == Access then
     end
 
     local function checkDungeon() 
+        dontTeleport = true
         while scriptAlive and waveDungeon <= targetWaveDungeon and inDungeon and isDungeon and waveRaid <= targetWaveRaid and waveDef <= targetWaveDef do 
             local monsters = workspace.Enemies:GetChildren()
+            if #monsters == 0 then
+                safeWait()
+                continue
+            end
             for _, monster in pairs(monsters) do
                 local Head = monster:FindFirstChild("Head")
                 if not Head or Head.Transparency ~= 0 then continue end
@@ -866,9 +917,10 @@ if game.PlaceId == 79189799490564 and key == Access then
                 killDungeon(monster)
                 safeWait()
             end
-        safeWait()
+            safeWait()
         end
         if isDungeon and (waveRaid > targetWaveRaid or waveDef > targetWaveDef) then teleportBack() end
+        dontTeleport = false
     end
 
     local function joinDungeon()
@@ -1293,7 +1345,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     -- GGUI
     
     local Window = Fluent:CreateWindow({
-        Title = "Fuck Hub | Anime Weapons | Version: 4.1 | Anti Crash",
+        Title = "Fuck Hub | Anime Weapons | Version: 2.3 | Beta",
         TabWidth = 160,
         Size = UDim2.fromOffset(580, 460),
         Acrylic = true, -- Transparent blur background
@@ -1362,10 +1414,12 @@ if game.PlaceId == 79189799490564 and key == Access then
         
     local tabs = {
         Main = Window:AddTab({ Title = "Farm", Icon = "swords" }),
-        Farm2 = Window:AddTab({ Title = "Location Farm", Icon = "swords" }),
+        Farm2 = Window:AddTab({ Title = "Location Farm", Icon = "map-pin" }),
         Dungeon = Window:AddTab({ Title = "Dungeons/ Raids", Icon = "skull" }),
-        Powers = Window:AddTab({ Title = "Auto Stronger", Icon = "flame" }),
-        Upgrades = Window:AddTab({ Title = "Auto Upgrades", Icon = "arrow-up" }),
+        Powers = Window:AddTab({ Title = "Auto Gachas", Icon = "flame" }),
+        AutoYen = Window:AddTab({ Title = "Auto Yen", Icon = "coins" }),
+        Token = Window:AddTab({ Title = "Token Machine", Icon = "refresh-ccw" }),
+        Upgrades = Window:AddTab({ Title = "Auto Upgrades", Icon = "wrench" }),
         Settings = Window:AddTab({ Title = "Player Config", Icon = "user-cog" })
     }
         
@@ -1701,13 +1755,44 @@ if game.PlaceId == 79189799490564 and key == Access then
             end
         end)
         
-        local toggleDemonArt = tabs.Powers:AddToggle("toggleDemonArt", {Title = "Auto DemonArt", Default = false})
-        toggleDemonArt:OnChanged(function()
-            isDemonArt = toggleDemonArt.Value
+        tabs.Powers:AddToggle("toggleDemonArt", {Title = "Auto DemonArt", Default = false}):OnChanged(function()
+            isDemonArt = option1.toggleDemonArt.Value
             if isDemonArt then
                 task.spawn(function() autoDemonArt() end)
             end
         end)
+
+        tabs.Powers:AddToggle("toggleAttackArea", {Title = "Auto Attack Area", Default = false}):OnChanged(function()
+            isAutoAttackArea = option1.toggleAttackArea.Value
+            if isAutoAttackArea then
+                ensureAttackAreaLoop()
+            end
+        end)
+
+        local yenStats = {"Luck", "Yen", "Mastery", "Critical", "Damage"}
+        for _, stat in ipairs(yenStats) do
+            local toggleId = "toggleYen"..stat
+            tabs.AutoYen:AddToggle(toggleId, {Title = "Auto "..stat, Default = false}):OnChanged(function()
+                local value = option1[toggleId].Value
+                yenUpgradeFlags[stat] = value
+                if value then
+                    ensureUpgradeLoop("Yen", stat, "Yen Upgrade")
+                end
+            end)
+        end
+
+        local tokenStats = {"Luck", "Yen", "Mastery", "Drop", "Damage", "Critical"}
+        for _, stat in ipairs(tokenStats) do
+            local toggleId = "toggleToken"..stat
+            tabs.Token:AddToggle(toggleId, {Title = "Auto "..stat, Default = false}):OnChanged(function()
+                local value = option1[toggleId].Value
+                tokenUpgradeFlags[stat] = value
+                if value then
+                    ensureUpgradeLoop("Token", stat, "Token Upgrade")
+                end
+            end)
+        end
+
         
         -- Auto Upgrades Tab
         local toggleUpgradeEyes = tabs.Upgrades:AddToggle("toggleUpgradeEyes", {Title = "Auto Upgrade Eyes", Default = false})
