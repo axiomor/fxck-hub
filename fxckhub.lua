@@ -7,15 +7,14 @@ if game.PlaceId == 79189799490564 and key == Access then
     local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
     local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
     local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Exunys/Config-Library/main/Main.lua"))()
-    local TextChatService = game:GetService("TextChatService")
-    local HatchGui = game:GetService("Players").LocalPlayer.PlayerGui
-
     local Players = game:GetService("Players")
     local player = Players.LocalPlayer
+    local TextChatService = game:GetService("TextChatService")
     local UserInputService = game:GetService("UserInputService")
     local RunService = game:GetService("RunService")
     local TweenService = game:GetService("TweenService")
     local CoreGui = game:GetService("CoreGui")
+    local HatchGui = player.PlayerGui
 
     local DEFAULT_WAIT = 0.15
     local FAST_WAIT = 0.05
@@ -428,6 +427,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     local isUpgradeRengoku = false
     local isUpgradeLevi = false
     local isUpgradeDemonArt = false
+    local isAutoEquipPower = false
     local isAutoAttackArea = false
     local yenUpgradeFlags = {}
     local tokenUpgradeFlags = {}
@@ -440,12 +440,23 @@ if game.PlaceId == 79189799490564 and key == Access then
         game:GetService("ReplicatedStorage"):WaitForChild("Reply"):WaitForChild("Reliable"):FireServer(unpack(args))
     end
 
+    local currentEquipMode = "Mastery"
+
     local function sendStatUpgrade(remoteName, stat)
         fireReliable({
             [1] = remoteName,
             [2] = {
                 [1] = stat
             }
+        })
+    end
+
+    local function setEquipMode(desiredMode)
+        if currentEquipMode == desiredMode then return end
+        currentEquipMode = desiredMode
+        fireReliable({
+            [1] = "Vault Equip Best",
+            [2] = {desiredMode}
         })
     end
 
@@ -476,6 +487,107 @@ if game.PlaceId == 79189799490564 and key == Access then
         end))
     end
 
+    local function createFloatingButton(window)
+        local function protectGui(gui)
+            if syn and syn.protect_gui then
+                syn.protect_gui(gui)
+                gui.Parent = game:GetService("CoreGui")
+            elseif PROTOSMASHER_LOADED then
+                gui.Parent = get_hidden_gui()
+            else
+                gui.Parent = CoreGui
+            end
+        end
+
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "FuckHubGUI"
+        screenGui.ResetOnSpawn = false
+        protectGui(screenGui)
+        ResourceManager:trackGui(screenGui)
+
+        local floatingButton = Instance.new("ImageButton")
+        floatingButton.Name = "FloatingToggle"
+        floatingButton.Parent = screenGui
+        floatingButton.BackgroundTransparency = 1
+        floatingButton.Size = UDim2.new(0, 60, 0, 60)
+        floatingButton.Position = UDim2.new(0, 20, 0.5, -30)
+        floatingButton.AnchorPoint = Vector2.new(0, 0.5)
+        floatingButton.ZIndex = 15
+        floatingButton.Image = "rbxassetid://106774424339076"
+        floatingButton.ScaleType = Enum.ScaleType.Fit
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(1, 0)
+        corner.Parent = floatingButton
+
+        ResourceManager:trackConnection(floatingButton.Activated:Connect(function()
+            local startTween = TweenService:Create(
+                floatingButton,
+                TweenInfo.new(0.2, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out),
+                {Size = UDim2.new(0, 80, 0, 80)}
+            )
+
+            local endTween = TweenService:Create(
+                floatingButton,
+                TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+                {Size = UDim2.new(0, 60, 0, 60)}
+            )
+
+            startTween:Play()
+            ResourceManager:trackThread(task.spawn(function()
+                local sound = Instance.new("Sound")
+                sound.SoundId = "rbxassetid://87437544236708"
+                sound.Parent = floatingButton
+                sound:Play()
+                sound.Ended:Wait()
+                sound:Destroy()
+            end))
+            startTween.Completed:Wait()
+            endTween:Play()
+        end))
+
+        local dragging = false
+        local dragStart = nil
+        local startPos = nil
+        local clickTime = 0
+        local isClick = true
+
+        ResourceManager:trackConnection(floatingButton.MouseButton1Down:Connect(function()
+            clickTime = tick()
+            isClick = true
+            dragStart = UserInputService:GetMouseLocation()
+            startPos = floatingButton.Position
+        end))
+
+        ResourceManager:trackConnection(UserInputService.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement and dragStart then
+                local currentPos = UserInputService:GetMouseLocation()
+                local delta = currentPos - dragStart
+                if delta.Magnitude > 5 then
+                    dragging = true
+                    isClick = false
+                end
+                if dragging and startPos then
+                    floatingButton.Position = UDim2.new(
+                        startPos.X.Scale,
+                        startPos.X.Offset + delta.X,
+                        startPos.Y.Scale,
+                        startPos.Y.Offset + delta.Y
+                    )
+                end
+            end
+        end))
+
+        ResourceManager:trackConnection(floatingButton.MouseButton1Up:Connect(function()
+            if isClick and not dragging and (tick() - clickTime) < 0.3 then
+                window:Minimize()
+            end
+            dragging = false
+            dragStart = nil
+            startPos = nil
+        end))
+    end
+
     local function setAutoAttack()
         local args = {
             "Settings",
@@ -488,21 +600,19 @@ if game.PlaceId == 79189799490564 and key == Access then
     end
     setAutoAttack()
 
-    ResourceManager:trackThread(task.spawn(function()
+    local attackRangeThread = ResourceManager:trackThread(task.spawn(function()
         while scriptAlive do
-            attackRangePart =  workspace:FindFirstChild("AttackRange")
-            if not attackRangePart  then 
-                setAutoAttack() 
-                safeWait(1)
-                continue
+            attackRangePart = workspace:FindFirstChild("AttackRange")
+            if attackRangePart then
+                local part = attackRangePart:FindFirstChild("Part")
+                if part then
+                    attackRange = part.Size.X / 2
+                else
+                    setAutoAttack()
+                end
+            else
+                setAutoAttack()
             end
-            attackRangePart = attackRangePart:FindFirstChild("Part")
-            if not attackRangePart  then 
-                setAutoAttack() 
-                safeWait(1)
-                continue
-            end
-            attackRange = attackRangePart.Size.X/2
             safeWait(1)
         end
     end))
@@ -856,6 +966,13 @@ if game.PlaceId == 79189799490564 and key == Access then
             inDungeon = checkFolderDungeonZones()
             if inDungeon == false then inDungeon = checkFolderRaidZones() end
             if inDungeon == false then inDungeon = checkFolderDefZones() end
+            if isAutoEquipPower then
+                if inDungeon then
+                    setEquipMode("Damage")
+                else
+                    setEquipMode("Mastery")
+                end
+            end
             safeWait(5)
         end 
     end))
@@ -1419,7 +1536,6 @@ if game.PlaceId == 79189799490564 and key == Access then
         Powers = Window:AddTab({ Title = "Auto Gachas", Icon = "flame" }),
         AutoYen = Window:AddTab({ Title = "Auto Yen", Icon = "coins" }),
         Token = Window:AddTab({ Title = "Token Machine", Icon = "refresh-ccw" }),
-        AutoQuest = Window:AddTab({ Title = "Auto Quest", Icon = "flag" }),
         Upgrades = Window:AddTab({ Title = "Auto Upgrades", Icon = "wrench" }),
         Settings = Window:AddTab({ Title = "Player Config", Icon = "user-cog" })
     }
@@ -1507,33 +1623,28 @@ if game.PlaceId == 79189799490564 and key == Access then
 
         locationDropdown:SetValues(locationNumber)
             
-        local toogleTeleport = tabs.Farm2:AddToggle("toogleTeleport", {
+        tabs.Farm2:AddToggle("toogleTeleport", {
             Title = "Auto Teleport across all your locations",
             Default = false
-        })
-        toogleTeleport:OnChanged(function()
-            isTeleportFarm = toogleTeleport.Value
-            if (isTeleportFarm) then
-                task.spawn(function() 
-                    autoTeleportFarm()
-                end)
+        }):OnChanged(function()
+            isTeleportFarm = option1.toogleTeleport.Value
+            if isTeleportFarm then
+                task.spawn(autoTeleportFarm)
             end
         end)
             
-        local teleportSpeed = tabs.Farm2:AddInput("Input", {
+        tabs.Farm2:AddInput("Input", {
             Title = "Teleport Delay (Seconds)",
             Default = 2,
             Placeholder = "Placeholder",
-            Numeric = true, -- Only allows numbers
-            Finished = false, -- Only calls callback when you press enter
-            Callback = function(Value)
-            end
-        })
-
-        teleportSpeed:OnChanged(function()
-            if teleportSpeed.Value == nil or teleportSpeed.Value == "" then
-                repeatTime = 1 else
-                repeatTime = math.max(teleportSpeed.Value, 0.3)
+            Numeric = true,
+            Finished = false,
+        }):OnChanged(function()
+            local value = option1.Input.Value
+            if value == nil or value == "" then
+                repeatTime = 1
+            else
+                repeatTime = math.max(value, 0.3)
             end
         end)
 
@@ -1617,16 +1728,25 @@ if game.PlaceId == 79189799490564 and key == Access then
             end
         end)
 
-        local teleportBackDropdown = tabs.Dungeon:AddDropdown("teleportBackDropdown", {
+        tabs.Dungeon:AddDropdown("teleportBackDropdown", {
             Title = "Auto Teleport to Map",
             Description = "IF NOT IN DUNGEON OR RAID",
             Values = {"None", "Naruto","DragonBall", "OnePiece", "DemonSlayer", "Paradis"},
             Multi = false,
             Default = "None",
-        })
-            
-        teleportBackDropdown:OnChanged(function(selectedValues)
+        }):OnChanged(function(selectedValues)
             teleportBackMap = selectedValues
+        end)
+
+        tabs.Dungeon:AddToggle("toggleAutoSwitch", {
+            Title = "AutoSwitch (Equip Power)",
+            Description = "Modo Mastery fora do gamemode e Damage dentro",
+            Default = false
+        }):OnChanged(function()
+            isAutoEquipPower = option1.toggleAutoSwitch.Value
+            if isAutoEquipPower then
+                setEquipMode(inDungeon and "Damage" or "Mastery")
+            end
         end)
 
         local inputTargetWaveRaid = tabs.Dungeon:AddInput("inputTargetWaveRaid", {
@@ -1770,47 +1890,7 @@ if game.PlaceId == 79189799490564 and key == Access then
             end
         end)
 
-        
--- AutoSwitch Power (ported from TigerHub)
-local isAutoEquipPower = false
-local mode = "Mastery"
-
-local function autoEquipPower()
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local Reply = ReplicatedStorage:WaitForChild("Reply")
-    local Reliable = Reply:WaitForChild("Reliable")
-    if mode == "Mastery" then
-        mode = "Damage"
-    else
-        mode = "Mastery"
-    end
-    pcall(function()
-        Reliable:FireServer("Vault Equip Best", {mode})
-    end)
-end
-
--- Add toggle to Powers tab
-tabs.Powers:AddToggle("toggleAutoSwitch", {Title = "AutoSwitch Power", Default = false}):OnChanged(function()
-    isAutoEquipPower = option1.toggleAutoSwitch.Value
-end)
-
--- Background loop to handle autoswitch logic (same behavior as TigerHub)
-ResourceManager:trackThread(task.spawn(function()
-    while scriptAlive do
-        safeWait(0.5)
-        inDungeon = checkFolderDungeonZones()
-        if inDungeon == false then inDungeon = checkFolderRaidZones() end
-        if inDungeon == false then inDungeon = checkFolderDefZones() end
-
-        if (inDungeon and mode == "Damage") or (inDungeon == false and mode == "Mastery") or isAutoEquipPower == false then
-            task.wait()
-        else
-            autoEquipPower()
-        end
-    end
-end))
-
-local yenStats = {"Luck", "Yen", "Mastery", "Critical", "Damage"}
+        local yenStats = {"Luck", "Yen", "Mastery", "Critical", "Damage"}
         for _, stat in ipairs(yenStats) do
             local toggleId = "toggleYen"..stat
             tabs.AutoYen:AddToggle(toggleId, {Title = "Auto "..stat, Default = false}):OnChanged(function()
@@ -1833,16 +1913,6 @@ local yenStats = {"Luck", "Yen", "Mastery", "Critical", "Damage"}
                 end
             end)
         end
-
-        local autoDemonRankToggle = tabs.AutoQuest:AddToggle("toggleDemonRank", {Title = "Auto Demon Rank", Default = false})
-        autoDemonRankToggle:OnChanged(function()
-            Fluent:Notify({
-                Title = "Auto Quest",
-                Content = autoDemonRankToggle.Value and "Auto Demon Rank ativado (aguardando lógica)." or "Auto Demon Rank desativado.",
-                Duration = 4
-            })
-        end)
-
         
         -- Auto Upgrades Tab
         local toggleUpgradeEyes = tabs.Upgrades:AddToggle("toggleUpgradeEyes", {Title = "Auto Upgrade Eyes", Default = false})
@@ -2212,110 +2282,7 @@ local yenStats = {"Luck", "Yen", "Mastery", "Critical", "Damage"}
             end
         end)
 
-        function Parent(GUI)
-            if syn and syn.protect_gui then
-                syn.protect_gui(GUI)
-                GUI.Parent = game:GetService("CoreGui")
-            elseif PROTOSMASHER_LOADED then
-                GUI.Parent = get_hidden_gui()
-            else
-                GUI.Parent = game:GetService("CoreGui")
-            end
-        end
-
-        local TS = game:GetService("TweenService")
-
-        local ScreenGui = Instance.new("ScreenGui")
-        ScreenGui.Name = "FuckHubGUI"
-        Parent(ScreenGui)
-        ResourceManager:trackGui(ScreenGui)
-
-       -- Floating button with asset ID: 127945978911642
-local floatingButton = Instance.new("ImageButton")
-floatingButton.Name = "FloatingToggle"
-floatingButton.Parent = ScreenGui
-floatingButton.BackgroundTransparency = 1
-floatingButton.Size = UDim2.new(0, 60, 0, 60)
-floatingButton.Position = UDim2.new(0, 20, 0.5, -30)
-floatingButton.AnchorPoint = Vector2.new(0, 0.5)
-floatingButton.ZIndex = 15
-floatingButton.Image = "rbxassetid://106774424339076"
-floatingButton.ScaleType = Enum.ScaleType.Fit
-
--- Make it circular
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(1, 0)
-corner.Parent = floatingButton
-
-ResourceManager:trackConnection(floatingButton.Activated:Connect(function()
-	local start = TS:Create(
-		floatingButton,
-		TweenInfo.new(0.2, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out),
-		{Size = UDim2.new(0, 80, 0, 80)}
-	)
-	
-	
-	local final = TS:Create(
-		floatingButton,
-		TweenInfo.new(0.2,Enum.EasingStyle.Back, Enum.EasingDirection.In),
-		{Size = UDim2.new(0, 60, 0, 60)}
-
-	)
-	start:Play()
-	ResourceManager:trackThread(task.spawn(function()
-		local sound = Instance.new("Sound")
-		sound.SoundId = "rbxassetid://87437544236708"
-		sound.Parent = floatingButton
-		sound:Play()
-		sound.Ended:Wait()
-		sound:Destroy()
-	end))
-	start.Completed:Wait()
-	final:Play()
-	
-end))
-        
-        -- Make it draggable and clickable
-        local dragging = false
-        local dragStart = nil
-        local startPos = nil
-        local clickTime = 0
-        local isClick = true
-        
-        ResourceManager:trackConnection(floatingButton.MouseButton1Down:Connect(function()
-            clickTime = tick()
-            isClick = true
-            dragStart = UserInputService:GetMouseLocation()
-            startPos = floatingButton.Position
-        end))
-        
-        local dragConnection
-        dragConnection = ResourceManager:trackConnection(UserInputService.InputChanged:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseMovement and dragStart then
-                local currentPos = UserInputService:GetMouseLocation()
-                local delta = currentPos - dragStart
-                if delta.Magnitude > 5 then
-                    dragging = true
-                    isClick = false
-                end
-                if dragging and startPos then
-                    floatingButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-                end
-            end
-        end))
-        
-        ResourceManager:trackConnection(floatingButton.MouseButton1Up:Connect(function()
-            if isClick and not dragging and (tick() - clickTime) < 0.3 then
-                Window:Minimize()
-            end
-            dragging = false
-            dragStart = nil
-            startPos = nil
-        end))
-        
-        
-        
-
+        createFloatingButton(Window)
         SaveManager:SetLibrary(Fluent)
         InterfaceManager:SetLibrary(Fluent)
 
