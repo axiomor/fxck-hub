@@ -367,7 +367,7 @@ if game.PlaceId == 79189799490564 and key == Access then
         end
     end)
 
-    local distance = 1000
+    local distance = 500
     local waveGui = game:GetService("Players").LocalPlayer.PlayerGui.Screen.Hud.gamemode.Raid.wave.amount
     local roomGui = game:GetService("Players").LocalPlayer.PlayerGui.Screen.Hud.gamemode.Dungeon.room.amount
     local defGui = game:GetService("Players").LocalPlayer.PlayerGui.Screen.Hud.gamemode.Defense.wave.amount
@@ -1345,7 +1345,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     -- GGUI
     
     local Window = Fluent:CreateWindow({
-        Title = "Fuck Hub | Anime Weapons | Version: 2.9 | Auto Switch",
+        Title = "Fuck Hub | Anime Weapons | Version: 2.8 | Demon Rank",
         TabWidth = 160,
         Size = UDim2.fromOffset(580, 460),
         Acrylic = true,
@@ -1770,47 +1770,7 @@ if game.PlaceId == 79189799490564 and key == Access then
             end
         end)
 
-        
--- AutoSwitch Power (ported from TigerHub)
-local isAutoEquipPower = false
-local mode = "Mastery"
-
-local function autoEquipPower()
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local Reply = ReplicatedStorage:WaitForChild("Reply")
-    local Reliable = Reply:WaitForChild("Reliable")
-    if mode == "Mastery" then
-        mode = "Damage"
-    else
-        mode = "Mastery"
-    end
-    pcall(function()
-        Reliable:FireServer("Vault Equip Best", {mode})
-    end)
-end
-
--- Add toggle to Powers tab
-tabs.Powers:AddToggle("toggleAutoSwitch", {Title = "AutoSwitch Power", Default = false}):OnChanged(function()
-    isAutoEquipPower = option1.toggleAutoSwitch.Value
-end)
-
--- Background loop to handle autoswitch logic (same behavior as TigerHub)
-ResourceManager:trackThread(task.spawn(function()
-    while scriptAlive do
-        safeWait(0.5)
-        inDungeon = checkFolderDungeonZones()
-        if inDungeon == false then inDungeon = checkFolderRaidZones() end
-        if inDungeon == false then inDungeon = checkFolderDefZones() end
-
-        if (inDungeon and mode == "Damage") or (inDungeon == false and mode == "Mastery") or isAutoEquipPower == false then
-            task.wait()
-        else
-            autoEquipPower()
-        end
-    end
-end))
-
-local yenStats = {"Luck", "Yen", "Mastery", "Critical", "Damage"}
+        local yenStats = {"Luck", "Yen", "Mastery", "Critical", "Damage"}
         for _, stat in ipairs(yenStats) do
             local toggleId = "toggleYen"..stat
             tabs.AutoYen:AddToggle(toggleId, {Title = "Auto "..stat, Default = false}):OnChanged(function()
