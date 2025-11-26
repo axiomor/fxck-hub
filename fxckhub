@@ -1,4 +1,3 @@
----fxckdevs
 _G.Key = "AnimeWeapons"
 local key = _G.Key
 local Access = "AnimeWeapons"
@@ -368,7 +367,7 @@ if game.PlaceId == 79189799490564 and key == Access then
         end
     end)
 
-    local distance = 500
+    local distance = 1000
     local waveGui = game:GetService("Players").LocalPlayer.PlayerGui.Screen.Hud.gamemode.Raid.wave.amount
     local roomGui = game:GetService("Players").LocalPlayer.PlayerGui.Screen.Hud.gamemode.Dungeon.room.amount
     local defGui = game:GetService("Players").LocalPlayer.PlayerGui.Screen.Hud.gamemode.Defense.wave.amount
@@ -1346,10 +1345,10 @@ if game.PlaceId == 79189799490564 and key == Access then
     -- GGUI
     
     local Window = Fluent:CreateWindow({
-        Title = "Fuck Hub | Anime Weapons | Version: 2.7 | Token, Yen Machines",
+        Title = "Fuck Hub | Anime Weapons | Version: 2.9 | Auto Switch",
         TabWidth = 160,
         Size = UDim2.fromOffset(580, 460),
-        Acrylic = true, -- Transparent blur background
+        Acrylic = true,
         Theme = "Amethyst",
         MinimizeKey = Enum.KeyCode.LeftControl -- Used when theres no MinimizeKeybind
     })
@@ -1420,6 +1419,7 @@ if game.PlaceId == 79189799490564 and key == Access then
         Powers = Window:AddTab({ Title = "Auto Gachas", Icon = "flame" }),
         AutoYen = Window:AddTab({ Title = "Auto Yen", Icon = "coins" }),
         Token = Window:AddTab({ Title = "Token Machine", Icon = "refresh-ccw" }),
+        AutoQuest = Window:AddTab({ Title = "Auto Quest", Icon = "flag" }),
         Upgrades = Window:AddTab({ Title = "Auto Upgrades", Icon = "wrench" }),
         Settings = Window:AddTab({ Title = "Player Config", Icon = "user-cog" })
     }
@@ -1770,7 +1770,47 @@ if game.PlaceId == 79189799490564 and key == Access then
             end
         end)
 
-        local yenStats = {"Luck", "Yen", "Mastery", "Critical", "Damage"}
+        
+-- AutoSwitch Power (ported from TigerHub)
+local isAutoEquipPower = false
+local mode = "Mastery"
+
+local function autoEquipPower()
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local Reply = ReplicatedStorage:WaitForChild("Reply")
+    local Reliable = Reply:WaitForChild("Reliable")
+    if mode == "Mastery" then
+        mode = "Damage"
+    else
+        mode = "Mastery"
+    end
+    pcall(function()
+        Reliable:FireServer("Vault Equip Best", {mode})
+    end)
+end
+
+-- Add toggle to Powers tab
+tabs.Powers:AddToggle("toggleAutoSwitch", {Title = "AutoSwitch Power", Default = false}):OnChanged(function()
+    isAutoEquipPower = option1.toggleAutoSwitch.Value
+end)
+
+-- Background loop to handle autoswitch logic (same behavior as TigerHub)
+ResourceManager:trackThread(task.spawn(function()
+    while scriptAlive do
+        safeWait(0.5)
+        inDungeon = checkFolderDungeonZones()
+        if inDungeon == false then inDungeon = checkFolderRaidZones() end
+        if inDungeon == false then inDungeon = checkFolderDefZones() end
+
+        if (inDungeon and mode == "Damage") or (inDungeon == false and mode == "Mastery") or isAutoEquipPower == false then
+            task.wait()
+        else
+            autoEquipPower()
+        end
+    end
+end))
+
+local yenStats = {"Luck", "Yen", "Mastery", "Critical", "Damage"}
         for _, stat in ipairs(yenStats) do
             local toggleId = "toggleYen"..stat
             tabs.AutoYen:AddToggle(toggleId, {Title = "Auto "..stat, Default = false}):OnChanged(function()
@@ -1793,6 +1833,15 @@ if game.PlaceId == 79189799490564 and key == Access then
                 end
             end)
         end
+
+        local autoDemonRankToggle = tabs.AutoQuest:AddToggle("toggleDemonRank", {Title = "Auto Demon Rank", Default = false})
+        autoDemonRankToggle:OnChanged(function()
+            Fluent:Notify({
+                Title = "Auto Quest",
+                Content = autoDemonRankToggle.Value and "Auto Demon Rank ativado (aguardando lógica)." or "Auto Demon Rank desativado.",
+                Duration = 4
+            })
+        end)
 
         
         -- Auto Upgrades Tab
