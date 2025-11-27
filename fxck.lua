@@ -1524,7 +1524,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     -- GGUI
     
     local Window = Fluent:CreateWindow({
-        Title = "Fuck Hub | Anime Weapons | Version: 2.8 | Demon Rank",
+        Title = "Fuck Hub | Anime Weapons | Version: 3.1 | Auto Switch Acessory",
         TabWidth = 160,
         Size = UDim2.fromOffset(580, 460),
         Acrylic = true,
