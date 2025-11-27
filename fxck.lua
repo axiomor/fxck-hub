@@ -411,6 +411,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     local isKilling = false
     local isRankUp = false
     local isFuse = false
+    local powerList = {}
     local isOrganization = false
     local isRace = false
     local isMagicEyes = false
@@ -434,6 +435,8 @@ if game.PlaceId == 79189799490564 and key == Access then
     local upgradeThreads = {Yen = {}, Token = {}}
     local attackAreaThread = nil
     local currentTime = os.date("*t") -- Use os.date() not os.time()
+    local masteryAccessory = ""
+    local damageAccessory = ""
     -- Main
 
     local function fireReliable(args)
@@ -458,6 +461,19 @@ if game.PlaceId == 79189799490564 and key == Access then
             [1] = "Vault Equip Best",
             [2] = {desiredMode}
         })
+        safeWait(0.5)
+        local accessory = ""
+        if desiredMode == "Mastery" then 
+            accessory = masteryAccessory 
+        else 
+            accessory = damageAccessory 
+        end
+        if accessory and accessory ~= "" then
+            fireReliable({
+                [1] = "Accessory Equip",
+                [2] = {accessory}
+            })
+        end
     end
 
     local function ensureUpgradeLoop(category, stat, remoteName, interval)
@@ -997,7 +1013,7 @@ if game.PlaceId == 79189799490564 and key == Access then
         local safeHeight = -2
 
         local headPos = getPosition(head)
-        local targetPosition = headPos + Vector3.new(5, hrpToFeet + safeHeight, 3)        
+        local targetPosition = headPos + Vector3.new(0, hrpToFeet + safeHeight, -attackRange+5)        
         if hrp then hrp.CFrame = CFrame.new(targetPosition) end
         while scriptAlive and isDungeon and inDungeon and head.Transparency == 0 and monster and monster.Parent do
             if not hrp then 
@@ -1008,8 +1024,9 @@ if game.PlaceId == 79189799490564 and key == Access then
                 return
             end
             if hrp then hrp.CFrame = CFrame.new(targetPosition) end
-            local newtargetPosition = getPosition(head) + Vector3.new(5, hrpToFeet + safeHeight, 3)   
-            if (newtargetPosition-targetPosition).Magnitude > 10 then targetPosition = newtargetPosition end
+            local newtargetPosition = getPosition(head) + Vector3.new(0, hrpToFeet + safeHeight, -attackRange+5)   
+            if (targetPosition-getPosition(head)).Magnitude >= attackRange then targetPosition = newtargetPosition end
+            if head.Transparency ~= 0 then return end
             safeWait()
         end
     end
@@ -1219,6 +1236,51 @@ if game.PlaceId == 79189799490564 and key == Access then
             print("Nenhum Crate encontrado em PlayerGui")
         end
     end
+
+    -- Initialize power list
+    table.insert(powerList, {name = "Biju", auto = false})
+    table.insert(powerList, {name = "MagicEyes", auto = false})
+    table.insert(powerList, {name = "Race", auto = false})
+    table.insert(powerList, {name = "Sayajin", auto = false})
+    table.insert(powerList, {name = "Haki", auto = false})
+    table.insert(powerList, {name = "Fruits", auto = false})
+    table.insert(powerList, {name = "Breathing", auto = false})
+    table.insert(powerList, {name = "DemonArt", auto = false})
+    table.insert(powerList, {name = "Titan", auto = false})
+    table.insert(powerList, {name = "Organization", auto = false})
+
+    local function changePower(name, value)
+        for _, power in pairs(powerList) do
+            if power.name == name then 
+                power.auto = value
+                return
+            end
+        end
+    end
+
+    -- Unified Multi Power Gacha Loop (Fixed)
+    ResourceManager:trackThread(task.spawn(function()
+        while scriptAlive do
+            for _, power in pairs(powerList) do
+                if power.auto == false then 
+                    safeWait()
+                    continue
+                end
+                local name = power.name
+                local ReplicatedStorage = game:GetService("ReplicatedStorage")
+                local Reliable = ReplicatedStorage.Reply.Reliable
+                Reliable:FireServer(
+                    "Crate Roll Start",
+                    {
+                        name,
+                        false
+                    }
+                )
+                safeWait(0.4)
+            end
+            safeWait()
+        end
+    end))
 
     -- New Auto Stronger Functions
     -- All gachas use the same format: "Crate Roll Start" with { { "GachaName", false } }
@@ -1462,7 +1524,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     -- GGUI
     
     local Window = Fluent:CreateWindow({
-        Title = "Fuck Hub | Anime Weapons | Version: 2.8 | Auto Switch",
+        Title = "Fuck Hub | Anime Weapons | Version: 2.8 | Demon Rank",
         TabWidth = 160,
         Size = UDim2.fromOffset(580, 460),
         Acrylic = true,
@@ -1749,6 +1811,28 @@ if game.PlaceId == 79189799490564 and key == Access then
             end
         end)
 
+        tabs.Dungeon:AddSection("Auto change power/ Accessory in gamemode")
+        tabs.Dungeon:AddInput("inputDamageAccessory", {
+            Title = "in GameMode Accessory Name",
+            Description = "Remove Space/blank",
+            Default = "WildHead",
+            Placeholder = "Remove Space/blank",
+            Numeric = false,
+            Finished = true,
+        }):OnChanged(function()
+            damageAccessory = option1.inputDamageAccessory.Value
+        end)
+        tabs.Dungeon:AddInput("inputMasteryAccessory", {
+            Title = "out GameMode Accessory Name",
+            Description = "Remove Space/blank",
+            Default = "EletricDrums",
+            Placeholder = "Remove Space/blank",
+            Numeric = false,
+            Finished = true,
+        }):OnChanged(function()
+            masteryAccessory = option1.inputMasteryAccessory.Value
+        end)
+
         local inputTargetWaveRaid = tabs.Dungeon:AddInput("inputTargetWaveRaid", {
             Title = "Target Wave (Raid)",
             Description = "Leave after this wave",
@@ -1806,81 +1890,51 @@ if game.PlaceId == 79189799490564 and key == Access then
         
         local toggleOrganization = tabs.Powers:AddToggle("toggleOrganization", {Title = "Auto Organization", Default = false})
         toggleOrganization:OnChanged(function()
-            isOrganization = toggleOrganization.Value
-            if isOrganization then
-                task.spawn(function() autoOrganization() end)
-            end
+            changePower("Organization", toggleOrganization.Value)
         end)
         
         local toggleRace = tabs.Powers:AddToggle("toggleRace", {Title = "Auto Race", Default = false})
         toggleRace:OnChanged(function()
-            isRace = toggleRace.Value
-            if isRace then
-                task.spawn(function() autoRace() end)
-            end
+            changePower("Race", toggleRace.Value)
         end)
         
         local toggleMagicEyes = tabs.Powers:AddToggle("toggleMagicEyes", {Title = "Auto Magic Eyes", Default = false})
         toggleMagicEyes:OnChanged(function()
-            isMagicEyes = toggleMagicEyes.Value
-            if isMagicEyes then
-                task.spawn(function() autoMagicEyes() end)
-            end
+            changePower("MagicEyes", toggleMagicEyes.Value)
         end)
         
         local toggleBiju = tabs.Powers:AddToggle("toggleBiju", {Title = "Auto Biju", Default = false})
         toggleBiju:OnChanged(function()
-            isBiju = toggleBiju.Value
-            if isBiju then
-                task.spawn(function() autoBiju() end)
-            end
+            changePower("Biju", toggleBiju.Value)
         end)
         
         local toggleSayajin = tabs.Powers:AddToggle("toggleSayajin", {Title = "Auto Sayajin", Default = false})
         toggleSayajin:OnChanged(function()
-            isSayajin = toggleSayajin.Value
-            if isSayajin then
-                task.spawn(function() autoSayajin() end)
-            end
+            changePower("Sayajin", toggleSayajin.Value)
         end)
         
         local toggleFruit = tabs.Powers:AddToggle("toggleFruit", {Title = "Auto Fruit", Default = false})
         toggleFruit:OnChanged(function()
-            isFruit = toggleFruit.Value
-            if isFruit then
-                task.spawn(function() autoFruit() end)
-            end
+            changePower("Fruits", toggleFruit.Value)
         end)
         
         local toggleHaki = tabs.Powers:AddToggle("toggleHaki", {Title = "Auto Haki", Default = false})
         toggleHaki:OnChanged(function()
-            isHaki = toggleHaki.Value
-            if isHaki then
-                task.spawn(function() autoHaki() end)
-            end
+            changePower("Haki", toggleHaki.Value)
         end)
         
         local toggleBreath = tabs.Powers:AddToggle("toggleBreath", {Title = "Auto Breath", Default = false})
         toggleBreath:OnChanged(function()
-            isBreath = toggleBreath.Value
-            if isBreath then
-                task.spawn(function() autoBreath() end)
-            end
+            changePower("Breathing", toggleBreath.Value)
         end)
         
         local toggleTitan = tabs.Powers:AddToggle("toggleTitan", {Title = "Auto Titan", Default = false})
         toggleTitan:OnChanged(function()
-            isTitan = toggleTitan.Value
-            if isTitan then
-                task.spawn(function() autoTitan() end)
-            end
+            changePower("Titan", toggleTitan.Value)
         end)
         
         tabs.Powers:AddToggle("toggleDemonArt", {Title = "Auto DemonArt", Default = false}):OnChanged(function()
-            isDemonArt = option1.toggleDemonArt.Value
-            if isDemonArt then
-                task.spawn(function() autoDemonArt() end)
-            end
+            changePower("DemonArt", option1.toggleDemonArt.Value)
         end)
 
         tabs.Powers:AddToggle("toggleAttackArea", {Title = "Auto Attack Area", Default = false}):OnChanged(function()
@@ -1913,7 +1967,7 @@ if game.PlaceId == 79189799490564 and key == Access then
                 end
             end)
         end
-        
+
         -- Auto Upgrades Tab
         local toggleUpgradeEyes = tabs.Upgrades:AddToggle("toggleUpgradeEyes", {Title = "Auto Upgrade Eyes", Default = false})
         toggleUpgradeEyes:OnChanged(function()
