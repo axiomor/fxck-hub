@@ -370,6 +370,13 @@ if game.PlaceId == 79189799490564 and key == Access then
     local waveGui = game:GetService("Players").LocalPlayer.PlayerGui.Screen.Hud.gamemode.Raid.wave.amount
     local roomGui = game:GetService("Players").LocalPlayer.PlayerGui.Screen.Hud.gamemode.Dungeon.room.amount
     local defGui = game:GetService("Players").LocalPlayer.PlayerGui.Screen.Hud.gamemode.Defense.wave.amount
+    local function findShadowGui()
+        local success, result = pcall(function()
+            return game:GetService("Players").LocalPlayer.PlayerGui.Screen.Hud.gamemode.ShadowGate.wave.amount
+        end)
+        return success and result or nil
+    end
+    local shadowGui = findShadowGui()
 
     local waveDungeon = tonumber((string.gsub(roomGui.Text, "Room: ", ""))) or 0
     local waveRaid = tonumber((string.gsub(waveGui.Text, "Room: ", ""))) or 0
@@ -380,11 +387,13 @@ if game.PlaceId == 79189799490564 and key == Access then
     if waveDef == 0 then
         waveDef = tonumber((string.gsub(defGui.Text, "Wave: ", ""))) or 0
     end
+    local waveShadow = 0
 
     local gachaZone
     local targetWaveRaid = 500
     local targetWaveDungeon = 500
     local targetWaveDef = 500
+    local targetWaveShadow = 500
     local attackRangePart 
     local attackRange 
 
@@ -412,16 +421,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     local isRankUp = false
     local isFuse = false
     local powerList = {}
-    local isOrganization = false
-    local isRace = false
-    local isMagicEyes = false
-    local isBiju = false
-    local isSayajin = false
-    local isFruit = false
-    local isHaki = false
-    local isBreath = false
-    local isTitan = false
-    local isDemonArt = false
+    local isShadowGate = false
     local isUpgradeEyes = false
     local isUpgradeWise = false
     local isUpgradePirate = false
@@ -754,6 +754,40 @@ if game.PlaceId == 79189799490564 and key == Access then
         end
     end))
 
+    local shadowConnection
+    local function updateShadowWave()
+        if not shadowGui then return end
+        local text = shadowGui.Text or ""
+        local value = tonumber((string.gsub(text, "Room:%s*", "")))
+        if not value then
+            value = tonumber((string.gsub(text, "Wave:%s*", "")))
+        end
+        waveShadow = value or waveShadow
+    end
+
+    local function attachShadowWatcher()
+        if shadowGui and not shadowConnection then
+            updateShadowWave()
+            shadowConnection = ResourceManager:trackConnection(shadowGui:GetPropertyChangedSignal("Text"):Connect(updateShadowWave))
+        end
+    end
+
+    attachShadowWatcher()
+
+    ResourceManager:trackThread(task.spawn(function()
+        while scriptAlive do
+            if not shadowGui or shadowGui.Parent == nil then
+                if shadowConnection then
+                    shadowConnection:Disconnect()
+                    shadowConnection = nil
+                end
+                shadowGui = findShadowGui()
+                attachShadowWatcher()
+            end
+            safeWait(5)
+        end
+    end))
+
 
     local function getDistance(obj1, obj2)
         local pos1, pos2
@@ -948,6 +982,23 @@ if game.PlaceId == 79189799490564 and key == Access then
         task.wait(6)
     end
 
+    ResourceManager:trackThread(task.spawn(function()
+        while scriptAlive do
+            if isShadowGate then
+                if waveShadow > targetWaveShadow then
+                    waveShadow = 0
+                    teleportBack()
+                end
+                safeWait(2)
+                fireReliable({
+                    [1] = "Open ShadowGate"
+                })
+            else
+                safeWait(1)
+            end
+        end
+    end))
+
     local function isPlayerInZone(zone)
         local chars = zone:FindFirstChild("Characters")
         if not chars then return false end
@@ -976,12 +1027,19 @@ if game.PlaceId == 79189799490564 and key == Access then
         if #location ~= 1 and location[2] and string.find(location[2].Name, "Defense:") and isPlayerInZone(location[2]) then return true end
         return false
     end
+    local function checkFolderShadowZones()
+        local location = workspace.Zones:GetChildren()
+        if location[1] and string.find(location[1].Name, "ShadowGate") and isPlayerInZone(location[1]) then return true end
+        if #location ~= 1 and location[2] and string.find(location[2].Name, "ShadowGate") and isPlayerInZone(location[2]) then return true end
+        return false
+    end
 
     ResourceManager:trackThread(task.spawn(function()
         while scriptAlive do
             inDungeon = checkFolderDungeonZones()
             if inDungeon == false then inDungeon = checkFolderRaidZones() end
             if inDungeon == false then inDungeon = checkFolderDefZones() end
+            if inDungeon == false then inDungeon = checkFolderShadowZones() end
             if isAutoEquipPower then
                 if inDungeon then
                     setEquipMode("Damage")
@@ -1069,6 +1127,10 @@ if game.PlaceId == 79189799490564 and key == Access then
         end
 
         if checkFolderDefZones() then
+            checkDungeon()
+            return
+        end
+        if checkFolderShadowZones() then
             checkDungeon()
             return
         end
@@ -1176,6 +1238,7 @@ if game.PlaceId == 79189799490564 and key == Access then
         end
     end
 
+
     -- Helper function to roll in any gacha via RemoteEvent
     local function rollGacha(gachaName, useTrue)
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -1248,6 +1311,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     table.insert(powerList, {name = "DemonArt", auto = false})
     table.insert(powerList, {name = "Titan", auto = false})
     table.insert(powerList, {name = "Organization", auto = false})
+    table.insert(powerList, {name = "Shadow", auto = false})
 
     local function changePower(name, value)
         for _, power in pairs(powerList) do
@@ -1281,86 +1345,6 @@ if game.PlaceId == 79189799490564 and key == Access then
             safeWait()
         end
     end))
-
-    -- New Auto Stronger Functions
-    -- All gachas use the same format: "Crate Roll Start" with { { "GachaName", false } }
-    -- All spam roll continuously when enabled
-    local function autoOrganization()
-        while scriptAlive and isOrganization do
-            rollGacha("Organization", false)
-            task.wait(0.1) -- Spam rápido
-        end
-    end
-
-    local function autoRace()
-        while scriptAlive and isRace do
-            rollGacha("Race", false)
-            task.wait(0.1) -- Spam rápido
-        end
-    end
-
-    local function autoMagicEyes()
-        while scriptAlive and isMagicEyes do
-            rollGacha("MagicEyes", false)
-            task.wait(0.1) -- Spam rápido
-        end
-    end
-
-    local function autoBiju()
-        while scriptAlive and isBiju do
-            rollGacha("Biju", false)
-            task.wait(0.1) -- Spam rápido
-        end
-    end
-
-    local function autoSayajin()
-        while scriptAlive and isSayajin do
-            rollGacha("Sayajin", false)
-            task.wait(0.1) -- Spam rápido
-        end
-    end
-
-    local function autoFruit()
-        while scriptAlive and isFruit do
-            rollGacha("Fruits", false)
-            task.wait(0.1) -- Spam rápido
-        end
-    end
-
-    local function autoHaki()
-        while scriptAlive and isHaki do
-            rollGacha("Haki", false)
-            task.wait(0.1) -- Spam rápido
-        end
-    end
-
-    local function autoBreath()
-        while scriptAlive and isBreath do
-            rollGacha("Breathing", false)
-            task.wait(0.1) -- Spam rápido
-        end
-    end
-
-    local function autoTitan()
-        while scriptAlive and isTitan do
-            rollGacha("Titan", false)
-            task.wait(0.1) -- Spam rápido
-        end
-    end
-
-    local function autoDemonArt()
-        while scriptAlive and isDemonArt do
-            local args = {
-                [1] = "Crate Roll Start",
-                [2] = {
-                    [1] = "DemonArt",
-                    [2] = false
-                }
-            }
-            game:GetService("ReplicatedStorage").Reply.Reliable:FireServer(unpack(args))
-            task.wait(0.1) -- Spam rápido
-        end
-    end
 
     -- Auto Upgrade Functions
     local function autoUpgradeEyes()
@@ -1524,7 +1508,7 @@ if game.PlaceId == 79189799490564 and key == Access then
     -- GGUI
     
     local Window = Fluent:CreateWindow({
-        Title = "Fuck Hub | Anime Weapons | Version: 3.1 | Auto Switch Acessory",
+        Title = "Fuck Hub | Anime Weapons | Version: 2.8 | Demon Rank",
         TabWidth = 160,
         Size = UDim2.fromOffset(580, 460),
         Acrylic = true,
@@ -1933,6 +1917,11 @@ if game.PlaceId == 79189799490564 and key == Access then
             changePower("Titan", toggleTitan.Value)
         end)
         
+        local toggleShadow = tabs.Powers:AddToggle("toggleShadow", {Title = "Auto Shadow", Default = false})
+        toggleShadow:OnChanged(function()
+            changePower("Shadow", toggleShadow.Value)
+        end)
+        
         tabs.Powers:AddToggle("toggleDemonArt", {Title = "Auto DemonArt", Default = false}):OnChanged(function()
             changePower("DemonArt", option1.toggleDemonArt.Value)
         end)
@@ -1941,6 +1930,30 @@ if game.PlaceId == 79189799490564 and key == Access then
             isAutoAttackArea = option1.toggleAttackArea.Value
             if isAutoAttackArea then
                 ensureAttackAreaLoop()
+            end
+        end)
+
+        tabs.Powers:AddSection("Shadow Gate Control")
+        tabs.Powers:AddToggle("toggleShadowGate", {
+            Title = "Auto Open Shadow Gate",
+            Default = false
+        }):OnChanged(function()
+            isShadowGate = option1.toggleShadowGate.Value
+        end)
+
+        tabs.Powers:AddInput("inputTargetWaveShadow", {
+            Title = "Target Wave (ShadowGate)",
+            Description = "Leave after this wave",
+            Default = 500,
+            Placeholder = "Wave",
+            Numeric = true,
+            Finished = true,
+        }):OnChanged(function()
+            local value = option1.inputTargetWaveShadow.Value
+            if value == nil or value == "" then
+                targetWaveShadow = 100
+            else
+                targetWaveShadow = tonumber(value) or targetWaveShadow
             end
         end)
 
