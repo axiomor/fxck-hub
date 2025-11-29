@@ -1,4 +1,4 @@
-_G.Key = "AnimeWeapons"
+CoreGui$0_G.Key = "AnimeWeapons"
 local key = _G.Key
 local Access = "AnimeWeapons"
 
@@ -827,7 +827,7 @@ if game.PlaceId == 79189799490564 and key == Access then
                 safeWait()
                 continue 
             end
-            local nameText = monster.Name
+            local nameText = monster.Head.EnemyOverhead.name.Text
             
             if not monster:FindFirstChild("Head") then continue end
             if monster.Head.Transparency ~= 0 then continue end
@@ -859,8 +859,8 @@ if game.PlaceId == 79189799490564 and key == Access then
 
         local stillTarget = false
         for _, target in pairs(targetList) do
-            if not monster or not monster.Name then return end
-            if (target == monster.Name) then
+            if not monster or not monster.name then return end
+            if (target == monster.name) then
                 stillTarget = true
                 break;
             end
@@ -887,8 +887,8 @@ if game.PlaceId == 79189799490564 and key == Access then
             end
             for _, target in pairs(targetList) do
                 if not monster.Parent or not monster then return end
-                if monster.Name == "" then return end
-                if (target == monster.Name) then
+                if monster.name == "" then return end
+                if (target == monster.name) then
                     stillTarget = true
                     break;
                 end
@@ -897,45 +897,87 @@ if game.PlaceId == 79189799490564 and key == Access then
         end
     end
 
-    local function check()
-        local monsters = workspace.Enemies:GetChildren()
-        for _, monster in pairs(monsters) do
-            if not keepRunning then break end
-            if not monster:FindFirstChild("Head") then return end
-            local Head = monster.Head
-            if Head.Transparency ~= 0 then continue end
-            if not hrp then 
-                safeWait()
-                continue
-            end
-            local dis = getDistance(hrp, monster)
-            if dis >= distance or dis <= attackRange then continue end
+local function waitRespawnByName(targetName)
+    local newMob = nil
 
-            if not monster then continue end
-            if monster.Name == "" or not monster.Name then 
-                safeWait()
-                continue
-            end
-            local nameText = monster.Name
+    -- Espera até surgir um inimigo com o mesmo display name
+    repeat
+        task.wait()
+        for _, m in ipairs(workspace.Enemies:GetChildren()) do
+            if m:FindFirstChild("Head")
+                and m.Head:FindFirstChild("EnemyOverhead")
+                and m.Head.EnemyOverhead:FindFirstChild("name")
+                and m.Head.EnemyOverhead.name.Text == targetName
+                and m.Head.Transparency == 0 then
 
-            for _, target in ipairs(targetList) do
-                if (target == nameText) then
-                    isKilling = true
-                    if inDungeon then 
-                        isKilling = false
-                        return
-                    end
-                    kill(monster)
+                newMob = m
+                break
+            end
+        end
+    until newMob
+
+    return newMob
+end
+
+
+local function check()
+    local monsters = workspace.Enemies:GetChildren()
+
+    for _, monster in pairs(monsters) do
+        if not keepRunning then break end
+        if not monster:FindFirstChild("Head") then return end
+
+        local Head = monster.Head
+        if Head.Transparency ~= 0 then continue end
+
+        if not hrp then
+            safeWait()
+            continue
+        end
+
+        local dis = getDistance(hrp, monster)
+        if dis >= distance or dis <= attackRange then continue end
+
+        if not monster then continue end
+
+        if not monster:FindFirstChild("Head")
+            or not monster.Head:FindFirstChild("EnemyOverhead")
+            or not monster.Head.EnemyOverhead:FindFirstChild("name") then
+            safeWait()
+            continue
+        end
+
+        local nameText = monster.Head.EnemyOverhead.name.Text
+
+        for _, target in ipairs(targetList) do
+            if target == nameText then
+                
+                isKilling = true
+
+                if inDungeon then
                     isKilling = false
-                    break
+                    return
                 end
+
+                -- Mata o inimigo
+                kill(monster)
+
+                -- Espera o respawn de outro monstro igual (nome pelo display)
+                monster = waitRespawnByName(nameText)
+                safeWait()
+                safeWait()
+
+                isKilling = false
+                break
             end
         end
     end
+end
+
 
     local function autoFarm()
         while scriptAlive and keepRunning do
-            if not isKilling and not inDungeon then
+            if not inDungeon then
                 check()
                 safeWait()
             end
@@ -1777,7 +1819,7 @@ if game.PlaceId == 79189799490564 and key == Access then
         tabs.Dungeon:AddDropdown("teleportBackDropdown", {
             Title = "Auto Teleport to Map",
             Description = "IF NOT IN DUNGEON OR RAID",
-            Values = {"None", "Naruto","DragonBall", "OnePiece", "DemonSlayer", "Paradis"},
+            Values = {"None", "Naruto","DragonBall", "OnePiece", "DemonSlayer", "Paradis","SoloLevel"},
             Multi = false,
             Default = "None",
         }):OnChanged(function(selectedValues)
