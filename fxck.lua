@@ -378,14 +378,18 @@ if game.PlaceId == 79189799490564 and key == Access then
     end
     local shadowGui = findShadowGui()
 
-    local waveDungeon = tonumber((string.gsub(roomGui.Text, "Room: ", ""))) or 0
-    local waveRaid = tonumber((string.gsub(waveGui.Text, "Room: ", ""))) or 0
+	local WaveRaidLimpo = string.match(waveGui.Text, "%d+")
+	local WaveDungeonLimpo = string.match(roomGui.Text, "%d+")
+	local WaveDefenseLimpo = string.match(defGui.Text, "%d+")
+
+    local waveDungeon = tonumber(WaveDungonLimpo) or 0
+    local waveRaid = tonumber(WaveRaidLimpo) or 0
     if waveRaid == 0 then
-        waveRaid = tonumber((string.gsub(waveGui.Text, "Wave: ", ""))) or 0
+        waveRaid = tonumber(waveRaidLimpo) or 0
     end
-    local waveDef = tonumber((string.gsub(defGui.Text, "Room: ", ""))) or 0
+    local waveDef = tonumber(WaveDefenseLimpo) or 0
     if waveDef == 0 then
-        waveDef = tonumber((string.gsub(defGui.Text, "Wave: ", ""))) or 0
+        waveDef = tonumber(WaveDefenseLimpo) or 0
     end
     local waveShadow = 0
 
@@ -1028,7 +1032,7 @@ end
     ResourceManager:trackThread(task.spawn(function()
         while scriptAlive do
             if isShadowGate then
-                if waveShadow > targetWaveShadow then
+                if waveShadow >= targetWaveShadow then
                     waveShadow = 0
                     teleportBack()
                 end
@@ -1356,6 +1360,7 @@ end
     table.insert(powerList, {name = "Organization", auto = false})
     table.insert(powerList, {name = "Shadow", auto = false})
     table.insert(powerList, {name = "SoloRanks", auto = false})
+    table.insert(powerList, {name = "TitanPets", auto = false})
 
     local function changePower(name, value)
         for _, power in pairs(powerList) do
@@ -1992,6 +1997,11 @@ end
          local toggleSoloRanks = tabs.Powers:AddToggle("toggleSoloRanks", {Title = "Auto Solo Ranks", Default = false})
         toggleSoloRanks:OnChanged(function()
             changePower("SoloRanks", toggleSoloRanks.Value)
+        end)
+
+        local toggleTitanPets = tabs.Powers:AddToggle("toggleTitanPets", {Title = "Auto Titan Pets", Default = false})
+        toggleTitanPets:OnChanged(function()
+            changePower("TitanPets", toggleTitanPets.Value)
         end)
 
         tabs.Powers:AddToggle("toggleAttackArea", {Title = "Auto Attack Area", Default = false}):OnChanged(function()
